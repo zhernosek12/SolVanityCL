@@ -12,12 +12,11 @@ def watch_json_files(directory: str):
                 if entry.is_file() and entry.name.endswith(".json"):
                     print("Кошелек найден:", entry.name)
                     return True
-            print("result not found...")
         time.sleep(0.1)
 
 
 parser = argparse.ArgumentParser(description="Enqueue vanity search task")
-parser.add_argument('--prefix', type=str, required=False, default="SoL", help='Префикс (можно несколько символов)')
+parser.add_argument('--prefix', type=str, required=True, default="SoL", help='Префикс (можно несколько символов)')
 parser.add_argument('--suffix', type=str, required=False, default="", help='Суффикс')
 parser.add_argument('--case-sensitive', action='store_true', help='Учитывать регистр')
 
@@ -30,7 +29,7 @@ headers = {
 }
 
 payload = json.dumps({
-    "prefix": list(args.prefix),
+    "prefix": args.prefix,
     "suffix": args.suffix,
     "case_sensitive": args.case_sensitive
 })
