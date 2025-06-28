@@ -6,3 +6,4 @@ numpy==1.26.4
 google-cloud-pubsub
 siphash24
 asyncio
+flask

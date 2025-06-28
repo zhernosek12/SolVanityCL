@@ -1,5 +1,7 @@
 import logging
 import time
+import multiprocessing
+
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -17,13 +19,14 @@ class Searcher:
         self,
         kernel_source: str,
         index: int,
-        setting: HostSetting,
+        setting,
         chosen_devices: Optional[Tuple[int, List[int]]] = None,
     ):
         if chosen_devices is None:
             devices = get_all_gpu_devices()
         else:
             devices = get_selected_gpu_devices(*chosen_devices)
+
         enabled_device = devices[index]
         self.context = cl.Context([enabled_device])
         self.gpu_chunks = len(devices)
@@ -38,30 +41,77 @@ class Searcher:
 
         program = cl.Program(self.context, kernel_source).build()
         self.kernel = cl.Kernel(program, "generate_pubkey")
+
         self.memobj_key32 = cl.Buffer(
             self.context,
             cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR,
             32 * np.ubyte().itemsize,
             hostbuf=self.setting.key32,
         )
+
         self.memobj_output = cl.Buffer(
             self.context, cl.mem_flags.READ_WRITE, 33 * np.ubyte().itemsize
         )
+
         self.memobj_occupied_bytes = cl.Buffer(
             self.context,
             cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
             hostbuf=np.array([self.setting.iteration_bytes]),
         )
+
         self.memobj_group_offset = cl.Buffer(
             self.context,
             cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
             hostbuf=np.array([self.index]),
         )
+
+        self.prefixes_buf = None
+        self.prefix_lengths_buf = None
+        self.suffix_buf = None
+        self.output = None
+
+    def set_search_params(self, PREFIXES: List[str], SUFFIX: str, CASE_SENSITIVE: bool):
+        PREFIXES = [p.encode("utf-8") for p in PREFIXES]
+        prefix_data = b''.join(PREFIXES)
+        prefix_data_array = np.frombuffer(prefix_data, dtype=np.uint8)
+        prefix_lengths = np.array([len(p) for p in PREFIXES], dtype=np.uint8)
+        suffix_bytes = SUFFIX.encode("utf-8")
+        suffix_data_array = np.frombuffer(suffix_bytes, dtype=np.uint8)
+        suffix_len = np.uint32(len(suffix_data_array))
+        case_sensitive = np.uint8(CASE_SENSITIVE)
+
+        if not hasattr(self, "prefixes_buf") or self.prefixes_buf is None:
+            self.prefixes_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_data_array.nbytes)
+        elif self.prefixes_buf.size < prefix_data_array.nbytes:
+            self.prefixes_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_data_array.nbytes)
+        cl.enqueue_copy(self.command_queue, self.prefixes_buf, prefix_data_array)
+
+        if not hasattr(self, "prefix_lengths_buf") or self.prefix_lengths_buf is None:
+            self.prefix_lengths_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_lengths.nbytes)
+        elif self.prefix_lengths_buf.size < prefix_lengths.nbytes:
+            self.prefix_lengths_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_lengths.nbytes)
+        cl.enqueue_copy(self.command_queue, self.prefix_lengths_buf, prefix_lengths)
+
+        if not hasattr(self, "suffix_buf") or self.suffix_buf is None:
+            self.suffix_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=max(1, suffix_data_array.nbytes))
+        elif self.suffix_buf.size < suffix_data_array.nbytes:
+            self.suffix_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=suffix_data_array.nbytes)
+        cl.enqueue_copy(self.command_queue, self.suffix_buf,
+                        suffix_data_array if suffix_len > 0 else np.array([0], dtype=np.uint8))
+
         self.output = np.zeros(33, dtype=np.ubyte)
+        cl.enqueue_copy(self.command_queue, self.memobj_output, self.output)
+
         self.kernel.set_arg(0, self.memobj_key32)
         self.kernel.set_arg(1, self.memobj_output)
         self.kernel.set_arg(2, self.memobj_occupied_bytes)
         self.kernel.set_arg(3, self.memobj_group_offset)
+        self.kernel.set_arg(4, self.prefixes_buf)
+        self.kernel.set_arg(5, self.prefix_lengths_buf)
+        self.kernel.set_arg(6, np.uint32(len(PREFIXES)))
+        self.kernel.set_arg(7, self.suffix_buf)
+        self.kernel.set_arg(8, suffix_len)
+        self.kernel.set_arg(9, case_sensitive)
 
     def find(self, log_stats: bool = True) -> np.ndarray:
         start_time = time.time()
@@ -86,6 +136,7 @@ class Searcher:
         return self.output
 
 
+"""
 def multi_gpu_init(
     index: int,
     setting: HostSetting,
@@ -103,6 +154,9 @@ def multi_gpu_init(
         )
         i = 0
         st = time.time()
+
+        searcher.set_search_params(["pepe"], "", False)
+
         while True:
             result = searcher.find(i == 0)
             if result[0]:
@@ -121,6 +175,47 @@ def multi_gpu_init(
     except Exception as e:
         logging.exception(e)
     return [0]
+"""
+
+
+def multi_gpu_worker(
+    index: int,
+    setting: HostSetting,
+    task_queue: multiprocessing.Queue,
+    result_queue: multiprocessing.Queue,
+    chosen_devices: Optional[Tuple[int, List[int]]] = None,
+):
+    try:
+        path_save = "./"
+
+        searcher = Searcher(
+            kernel_source=setting.kernel_source,
+            index=index,
+            setting=setting,
+            chosen_devices=chosen_devices,
+        )
+        while True:
+            task = task_queue.get()
+            if task is None:
+                break
+
+            prefix, suffix, case_sensitive = task
+            searcher.set_search_params([prefix], suffix, case_sensitive)  # Imortant == []
+
+            i = 0
+            st = time.time()
+            while True:
+                result = searcher.find(i == 0)
+                if result[0]:
+                    save_result([result.tolist()], path_save)
+                    break
+                if time.time() - st > 1:
+                    i = 0
+                    st = time.time()
+                else:
+                    i += 1
+    except Exception as e:
+        logging.exception(e)
 
 
 def save_result(outputs: List, output_dir: str) -> int:

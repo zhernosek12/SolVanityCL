@@ -3,3 +3,5 @@ pyopencl
 base58
 PyNaCl
 numpy==1.26.4
+flask
+requests

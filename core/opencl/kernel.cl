@@ -16,11 +16,12 @@ constant uchar SUFFIX[] = {};
 constant bool CASE_SENSITIVE = true;
 // DO NOT EDIT ABOVE THIS LINE -- END OF AUTO-GENERATED CODE
 
-#define ADJUST_INPUT_CASE(x) \
-(CASE_SENSITIVE ? (x) : \
+#define ADJUST_INPUT_CASE(x, case_sensitive) \
+(case_sensitive ? (x) : \
     ((x) - ((x) > 32) * \
         (((unsigned int) 67091966 >> ((x) & 31)) & 1) * \
         (24 + (((unsigned int) 67079168 >> ((x) & 31)) & 1))))
+
 
 constant uchar alphabet_indices[] = {
   0, 0, 0, 0, 0, 0, 0, 0,
@@ -3733,9 +3734,21 @@ static uchar * base58_encode(uchar *in, size_t *out_len, uchar *out) {
   return out + skip;
 }
 
-__kernel void generate_pubkey(constant uchar *seed, global uchar *out,
-                              global uchar *occupied_bytes,
-                              global uchar *group_offset) {
+__kernel void generate_pubkey(
+    __constant uchar *seed,
+    __global uchar *out,
+    __global uchar *occupied_bytes,
+    __global uchar *group_offset,
+
+    __constant uchar *prefixes,
+    __constant uchar *prefix_lengths,
+    const uint prefix_count,
+
+    __constant uchar *suffix,
+    const uint suffix_length,
+
+    const uchar case_sensitive
+) {
   uchar public_key[32] __attribute__((aligned(4)));
   uchar private_key[64];
   uchar key_base[32];
@@ -3758,26 +3771,34 @@ __kernel void generate_pubkey(constant uchar *seed, global uchar *out,
 
   unsigned int any_mismatch = 1;
 
-  // prefix matching
-  #pragma unroll
-  for (size_t p = 0; p < N; p++) {
-    unsigned int prefix_mismatch = 0;
-    for (size_t i = 0; i < L && PREFIXES[p][i] != 0; i++) {
-      prefix_mismatch |= ADJUST_INPUT_CASE(addr_raw[i]) ^ ADJUST_INPUT_CASE(alphabet_indices[PREFIXES[p][i]]);
+    uint prefix_offset = 0;
+
+    for (uint p = 0; p < prefix_count; p++) {
+        uchar len = prefix_lengths[p];
+        uint prefix_mismatch = 0;
+
+        for (uint i = 0; i < len; i++) {
+            uchar a = ADJUST_INPUT_CASE(addr_raw[i], case_sensitive);
+            uchar b = ADJUST_INPUT_CASE(alphabet_indices[prefixes[prefix_offset + i]], case_sensitive);
+            prefix_mismatch |= (a ^ b);
+        }
+
+        prefix_offset += len;
+
+        if (!prefix_mismatch) {
+            any_mismatch = 0;
+            break;
+        }
     }
 
-    if (!prefix_mismatch) {
-      any_mismatch = 0;
-      break;
+    if (suffix_length > 0) {
+        for (uint i = 0; i < suffix_length; i++) {
+            uchar a = ADJUST_INPUT_CASE(addr_raw[length - suffix_length + i], case_sensitive);
+            uchar b = ADJUST_INPUT_CASE(alphabet_indices[suffix[i]], case_sensitive);
+
+            any_mismatch |= (a ^ b);
+        }
     }
-}
-
-  // suffix matching
-  #pragma unroll
-  for (size_t i = 0; i < sizeof(SUFFIX); i++) {
-    any_mismatch |= ADJUST_INPUT_CASE(addr_raw[length - sizeof(SUFFIX) + i]) ^ ADJUST_INPUT_CASE(alphabet_indices[SUFFIX[i]]);
-  }
-
 
   if (!any_mismatch) {
     // assign to out

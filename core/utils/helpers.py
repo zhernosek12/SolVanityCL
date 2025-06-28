@@ -17,12 +17,9 @@ def check_character(name: str, character: str) -> None:
         raise e
 
 
-def load_kernel_source(
+def old_load_kernel_source(
     starts_with_list: Tuple[str], ends_with: str, is_case_sensitive: bool
 ) -> str:
-    """
-    Update OpenCL codes with parameters
-    """
     prefixes = (
         [list(prefix.encode()) for prefix in starts_with_list]
         if starts_with_list
@@ -61,6 +58,21 @@ def load_kernel_source(
             source_lines[i] = (
                 f"constant bool CASE_SENSITIVE = {str(is_case_sensitive).lower()};\n"
             )
+
+    source_str = "".join(source_lines)
+    if "NVIDIA" in str(cl.get_platforms()) and platform.system() == "Windows":
+        source_str = source_str.replace("#define __generic\n", "")
+    if cl.get_cl_header_version()[0] != 1 and platform.system() != "Windows":
+        source_str = source_str.replace("#define __generic\n", "")
+    return source_str
+
+
+def load_kernel_source() -> str:
+    kernel_path = Path(__file__).parent.parent / "opencl" / "kernel.cl"
+    if not kernel_path.exists():
+        raise FileNotFoundError("Kernel source file not found.")
+    with kernel_path.open("r") as f:
+        source_lines = f.readlines()
 
     source_str = "".join(source_lines)
     if "NVIDIA" in str(cl.get_platforms()) and platform.system() == "Windows":
