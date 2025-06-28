@@ -12,7 +12,8 @@ def watch_json_files(directory: str):
                 if entry.is_file() and entry.name.endswith(".json"):
                     print("Кошелек найден:", entry.name)
                     return True
-        time.sleep(0.05)
+            print("result not found...")
+        time.sleep(0.1)
 
 
 parser = argparse.ArgumentParser(description="Enqueue vanity search task")
