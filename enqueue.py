@@ -1,7 +1,19 @@
 import argparse
 import json
+import time
 import requests
 import os
+
+
+def watch_json_files(directory: str):
+    while True:
+        with os.scandir(directory) as it:
+            for entry in it:
+                if entry.is_file() and entry.name.endswith(".json"):
+                    print("SUCCESS:", entry.name)
+                    return True
+        time.sleep(0.05)
+
 
 parser = argparse.ArgumentParser(description="Enqueue vanity search task")
 parser.add_argument('--prefix', type=str, required=False, default="SoL", help='Префикс (можно несколько символов)')
@@ -27,8 +39,7 @@ response.raise_for_status()
 if response.status_code == 200:
     print(response.text)
 
-    with os.scandir("./") as it:
-        for entry in it:
-            if entry.is_file() and entry.name.endswith(".json"):
-                print(f"SUCCESS = {entry.name}")
+    watch_json_files(os.path.dirname(os.path.abspath(__file__)))
+
+
 
