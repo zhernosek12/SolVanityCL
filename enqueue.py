@@ -1,6 +1,7 @@
 import argparse
 import json
 import requests
+import os
 
 parser = argparse.ArgumentParser(description="Enqueue vanity search task")
 parser.add_argument('--prefix', type=str, required=False, default="SoL", help='Префикс (можно несколько символов)')
@@ -23,5 +24,11 @@ payload = json.dumps({
 response = requests.post(url, headers=headers, data=payload)
 response.raise_for_status()
 
-print(response.status_code)
-print(response.text)
+if response.status_code == 200:
+    print(response.text)
+
+    with os.scandir("./") as it:
+        for entry in it:
+            if entry.is_file() and entry.name.endswith(".json"):
+                print(f"SUCCESS = {entry.name}")
+
