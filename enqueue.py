@@ -10,7 +10,7 @@ def watch_json_files(directory: str):
         with os.scandir(directory) as it:
             for entry in it:
                 if entry.is_file() and entry.name.endswith(".json"):
-                    print("SUCCESS:", entry.name)
+                    print("Кошелек найден:", entry.name)
                     return True
         time.sleep(0.05)
 
@@ -23,6 +23,7 @@ parser.add_argument('--case-sensitive', action='store_true', help='Учитыв�
 args = parser.parse_args()
 
 url = "http://localhost:5000/enqueue"
+
 headers = {
     'Content-Type': 'application/json'
 }
@@ -33,13 +34,18 @@ payload = json.dumps({
     "case_sensitive": args.case_sensitive
 })
 
-response = requests.post(url, headers=headers, data=payload)
+response = requests.post(
+    url=url,
+    headers=headers,
+    data=payload
+)
 response.raise_for_status()
 
-if response.status_code == 200:
-    print(response.text)
+print(response.text)
+print("Запускаем ожидание кошелька...")
 
-    watch_json_files(os.path.dirname(os.path.abspath(__file__)))
+watch_json_files(os.path.dirname(os.path.abspath(__file__)))
+
 
 
 
