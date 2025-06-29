@@ -3757,6 +3757,7 @@ __kernel void generate_pubkey(
   for (size_t i = 0; i < 32; i++) {
     key_base[i] = seed[i];
   }
+
   const int global_id = (*group_offset) * get_global_size(0) + get_global_id(0);
 
   // reset last occupied bytes

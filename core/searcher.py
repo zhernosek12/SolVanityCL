@@ -36,6 +36,7 @@ class Searcher:
         self.display_index = (
             index if chosen_devices is None else chosen_devices[1][index]
         )
+        self.start_index = 0
         self.prev_time = None
         self.is_nvidia = "NVIDIA" in enabled_device.platform.name.upper()
 
@@ -57,66 +58,56 @@ class Searcher:
         prefix_data_array = np.frombuffer(prefix_data, dtype=np.uint8)
         prefix_lengths = np.array([len(p) for p in PREFIXES], dtype=np.uint8)
         suffix_bytes = SUFFIX.encode("utf-8")
-        suffix_data_array = np.frombuffer(suffix_bytes, dtype=np.uint8)
-        suffix_len = np.uint32(len(suffix_data_array))
+        suffix_data_array = np.frombuffer(suffix_bytes if suffix_bytes else b"\x00", dtype=np.uint8)
+        suffix_len = np.uint32(len(suffix_bytes))
         case_sensitive = np.uint8(CASE_SENSITIVE)
 
-        key32 = self.setting.key32
-        occupied_bytes = np.array([self.setting.iteration_bytes], dtype=np.uint8)
-        group_offset = np.array([self.index], dtype=np.uint8)
-
-        if not hasattr(self, "memobj_key32") or self.memobj_key32 is None:
-            self.memobj_key32 = cl.Buffer(
-                self.context,
-                cl.mem_flags.READ_ONLY,
-                size=key32.nbytes
-            )
-        cl.enqueue_copy(self.command_queue, self.memobj_key32, key32)
-
-        if not hasattr(self, "memobj_output") or self.memobj_output is None:
-            self.output = np.zeros(33, dtype=np.ubyte)
-            self.memobj_output = cl.Buffer(
-                self.context, cl.mem_flags.READ_WRITE, size=self.output.nbytes
-            )
-        cl.enqueue_copy(self.command_queue, self.memobj_output, self.output)
-
-        if not hasattr(self, "memobj_occupied_bytes") or self.memobj_occupied_bytes is None:
-            self.memobj_occupied_bytes = cl.Buffer(
-                self.context,
-                cl.mem_flags.READ_WRITE,
-                size=occupied_bytes.nbytes
-            )
-        cl.enqueue_copy(self.command_queue, self.memobj_occupied_bytes, occupied_bytes)
-
-        if not hasattr(self, "memobj_group_offset") or self.memobj_group_offset is None:
-            self.memobj_group_offset = cl.Buffer(
-                self.context,
-                cl.mem_flags.READ_WRITE,
-                size=group_offset.nbytes
-            )
-        cl.enqueue_copy(self.command_queue, self.memobj_group_offset, group_offset)
-
-        if not hasattr(self, "prefixes_buf") or self.prefixes_buf is None:
-            self.prefixes_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_data_array.nbytes)
-        elif self.prefixes_buf.size < prefix_data_array.nbytes:
-            self.prefixes_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_data_array.nbytes)
-        cl.enqueue_copy(self.command_queue, self.prefixes_buf, prefix_data_array)
-
-        if not hasattr(self, "prefix_lengths_buf") or self.prefix_lengths_buf is None:
-            self.prefix_lengths_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_lengths.nbytes)
-        elif self.prefix_lengths_buf.size < prefix_lengths.nbytes:
-            self.prefix_lengths_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_lengths.nbytes)
-        cl.enqueue_copy(self.command_queue, self.prefix_lengths_buf, prefix_lengths)
-
-        if not hasattr(self, "suffix_buf") or self.suffix_buf is None:
-            self.suffix_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=max(1, suffix_data_array.nbytes))
-        elif self.suffix_buf.size < suffix_data_array.nbytes:
-            self.suffix_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=suffix_data_array.nbytes)
-        cl.enqueue_copy(self.command_queue, self.suffix_buf,
-                        suffix_data_array if suffix_len > 0 else np.array([0], dtype=np.uint8))
-
         self.output = np.zeros(33, dtype=np.ubyte)
-        cl.enqueue_copy(self.command_queue, self.memobj_output, self.output)
+
+        occupied_bytes = np.array([self.setting.iteration_bytes], dtype=np.uint32)
+        group_offset = np.array([self.index], dtype=np.uint32)
+
+        self.setting.key32 = self.setting.generate_key32()  # уникальный seed для уникального приватника
+        key32 = self.setting.key32
+
+        self.memobj_key32 = cl.Buffer(
+            self.context,
+            cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=key32
+        )
+
+        self.memobj_output = cl.Buffer(
+            self.context,
+            cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
+            hostbuf=self.output
+        )
+
+        self.memobj_occupied_bytes = cl.Buffer(
+            self.context, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
+            hostbuf=occupied_bytes
+        )
+
+        self.memobj_group_offset = cl.Buffer(
+            self.context,
+            cl.mem_flags.READ_WRITE,
+            size=group_offset.nbytes
+        )
+
+        self.prefixes_buf = cl.Buffer(
+            self.context, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR,
+            hostbuf=prefix_data_array
+        )
+
+        self.prefix_lengths_buf = cl.Buffer(
+            self.context,
+            cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR,
+            hostbuf=prefix_lengths
+        )
+
+        self.suffix_buf = cl.Buffer(
+            self.context,
+            cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR,
+            hostbuf=suffix_data_array
+        )
 
         self.kernel.set_arg(0, self.memobj_key32)
         self.kernel.set_arg(1, self.memobj_output)
@@ -203,7 +194,6 @@ def multi_gpu_worker(
 ):
     try:
         path_save = "./"
-
         searcher = Searcher(
             kernel_source=setting.kernel_source,
             index=index,
