@@ -42,29 +42,10 @@ class Searcher:
         program = cl.Program(self.context, kernel_source).build()
         self.kernel = cl.Kernel(program, "generate_pubkey")
 
-        self.memobj_key32 = cl.Buffer(
-            self.context,
-            cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR,
-            32 * np.ubyte().itemsize,
-            hostbuf=self.setting.key32,
-        )
-
-        self.memobj_output = cl.Buffer(
-            self.context, cl.mem_flags.READ_WRITE, 33 * np.ubyte().itemsize
-        )
-
-        self.memobj_occupied_bytes = cl.Buffer(
-            self.context,
-            cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
-            hostbuf=np.array([self.setting.iteration_bytes]),
-        )
-
-        self.memobj_group_offset = cl.Buffer(
-            self.context,
-            cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
-            hostbuf=np.array([self.index]),
-        )
-
+        self.memobj_key32 = None
+        self.memobj_output = None
+        self.memobj_occupied_bytes = None
+        self.memobj_group_offset = None
         self.prefixes_buf = None
         self.prefix_lengths_buf = None
         self.suffix_buf = None
@@ -79,6 +60,41 @@ class Searcher:
         suffix_data_array = np.frombuffer(suffix_bytes, dtype=np.uint8)
         suffix_len = np.uint32(len(suffix_data_array))
         case_sensitive = np.uint8(CASE_SENSITIVE)
+
+        key32 = self.setting.key32
+        occupied_bytes = np.array([self.setting.iteration_bytes], dtype=np.uint32)
+        group_offset = np.array([self.index], dtype=np.uint32)
+
+        if not hasattr(self, "memobj_key32") or self.memobj_key32 is None:
+            self.memobj_key32 = cl.Buffer(
+                self.context,
+                cl.mem_flags.READ_ONLY,
+                size=key32.nbytes
+            )
+        cl.enqueue_copy(self.command_queue, self.memobj_key32, key32)
+
+        if not hasattr(self, "memobj_output") or self.memobj_output is None:
+            self.output = np.zeros(33, dtype=np.ubyte)
+            self.memobj_output = cl.Buffer(
+                self.context, cl.mem_flags.READ_WRITE, size=self.output.nbytes
+            )
+        cl.enqueue_copy(self.command_queue, self.memobj_output, self.output)
+
+        if not hasattr(self, "memobj_occupied_bytes") or self.memobj_occupied_bytes is None:
+            self.memobj_occupied_bytes = cl.Buffer(
+                self.context,
+                cl.mem_flags.READ_WRITE,
+                size=occupied_bytes.nbytes
+            )
+        cl.enqueue_copy(self.command_queue, self.memobj_occupied_bytes, occupied_bytes)
+
+        if not hasattr(self, "memobj_group_offset") or self.memobj_group_offset is None:
+            self.memobj_group_offset = cl.Buffer(
+                self.context,
+                cl.mem_flags.READ_WRITE,
+                size=group_offset.nbytes
+            )
+        cl.enqueue_copy(self.command_queue, self.memobj_group_offset, group_offset)
 
         if not hasattr(self, "prefixes_buf") or self.prefixes_buf is None:
             self.prefixes_buf = cl.Buffer(self.context, cl.mem_flags.READ_ONLY, size=prefix_data_array.nbytes)
