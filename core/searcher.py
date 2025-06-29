@@ -62,8 +62,8 @@ class Searcher:
         case_sensitive = np.uint8(CASE_SENSITIVE)
 
         key32 = self.setting.key32
-        occupied_bytes = np.array([self.setting.iteration_bytes], dtype=np.uint32)
-        group_offset = np.array([self.index], dtype=np.uint32)
+        occupied_bytes = np.array([self.setting.iteration_bytes], dtype=np.uint8)
+        group_offset = np.array([self.index], dtype=np.uint8)
 
         if not hasattr(self, "memobj_key32") or self.memobj_key32 is None:
             self.memobj_key32 = cl.Buffer(
