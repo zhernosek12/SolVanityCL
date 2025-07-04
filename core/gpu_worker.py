@@ -64,16 +64,13 @@ def multi_gpu_worker(
                 i = 0
                 st = time.time()
                 while True:
-                    if i == 0:
-                        logger.info(f"active_pairs: {active_pairs}")
-
                     result = searcher.find(i == 0)
                     found_something = False
 
+                    logger.info(f"finde: {result}")
+
                     if result:
                         results = get_results([r for r in result])
-
-                        logger.info(f"finde: {results}")
 
                         for data in results:
                             address, private_key = data
@@ -101,10 +98,10 @@ def multi_gpu_worker(
                             found_something = True
                             break
 
-                        if found_something:
-                            break
-                        else:
-                            time.sleep(0.01)  # предотвращение tight loop
+                    if found_something:
+                        break
+                    else:
+                        time.sleep(0.01)  # предотвращение tight loop
 
                     if time.time() - st > 1:
                         i = 0
