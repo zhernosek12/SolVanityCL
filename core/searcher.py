@@ -116,6 +116,7 @@ class Searcher:
         self.memobj_group_offset = cl.Buffer(
             self.context,
             cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
+            hostbuf=group_offset,
             size=group_offset.nbytes
         )
 
