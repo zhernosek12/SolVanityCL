@@ -146,11 +146,7 @@ class Searcher:
 
     def find(self, log_stats: bool = True):
         start_time = time.time()
-
-        self.output_index[0] = 0
-
         cl.enqueue_copy(self.command_queue, self.memobj_out_index, self.output_index)  # new
-
         global_worker_size = self.setting.global_work_size // self.gpu_chunks
         cl.enqueue_nd_range_kernel(
             self.command_queue,
@@ -165,7 +161,7 @@ class Searcher:
             time.sleep(self.prev_time * 0.98)
 
         cl.enqueue_copy(self.command_queue, self.output, self.memobj_output).wait()
-        cl.enqueue_copy(self.command_queue, self.output_index, self.memobj_out_index).wait()  # NEW
+        cl.enqueue_copy(self.command_queue, self.output_index, self.memobj_out_index).wait()
 
         self.prev_time = time.time() - start_time
         if log_stats:
@@ -174,6 +170,7 @@ class Searcher:
             )
 
         results = []
+
         if self.output_index[0] == 1:
             base_idx = 0
             length = self.output[base_idx]
