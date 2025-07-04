@@ -3756,10 +3756,6 @@ __kernel void generate_pubkey(
 
     const int global_id = (*group_offset) * get_global_size(0) + get_global_id(0);
 
-    //if (*out_index != 0) {
-    //    return;
-    //}
-
     for (uint i = 0; i < 32; i++) {
         key_base[i] = seed[i];
     }
@@ -3777,6 +3773,8 @@ __kernel void generate_pubkey(
     uint suffix_offset = 0;
 
     for (uint pair_idx = 0; pair_idx < pair_count; pair_idx++) {
+        if (atomic_load(out_index) != 0) break;
+
         uchar pre_len = prefix_lengths[pair_idx];
         uchar suf_len = suffix_lengths[pair_idx];
         uint mismatch = 0;
