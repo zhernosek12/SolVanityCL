@@ -3735,27 +3735,37 @@ static uchar * base58_encode(uchar *in, size_t *out_len, uchar *out) {
 }
 
 __kernel void generate_pubkey(
-    __constant uchar  *seed,
-    __global  uchar  *out,
-    __global  uint   *occupied_bytes,
-    __global  uint   *group_offset,
-    __constant uchar  *prefixes,
-    __constant uchar  *prefix_lengths,
-    __constant uchar  *suffixes,
-    __constant uchar  *suffix_lengths,
-    const uint         pair_count,
-    const uchar        case_sensitive,
-    __global  uint    *out_index
+    __constant uchar *seed,
+    __global uchar *out,
+    __global uchar *occupied_bytes,
+    __global uchar *group_offset,
+
+    __constant uchar *prefixes,
+    __constant uchar *prefix_lengths,
+    __constant uchar *suffixes,
+    __constant uchar *suffix_lengths,
+    const uint pair_count,
+
+    const uchar case_sensitive,
+
+    __global uint *out_index
 ) {
     uchar public_key[32] __attribute__((aligned(4)));
     uchar private_key[64];
     uchar key_base[32];
-    const int gid = (*group_offset) * get_global_size(0) + get_global_id(0);
 
-    for (uint i = 0; i < 32; i++)
+    const int global_id = (*group_offset) * get_global_size(0) + get_global_id(0);
+
+    //if (*out_index != 0) {
+    //    return;
+    //}
+
+    for (uint i = 0; i < 32; i++) {
         key_base[i] = seed[i];
-    for (uint i = 0; i < occupied_bytes[0]; i++)
-        key_base[31 - i] ^= ((gid >> (i * 8)) & 0xFF);
+    }
+    for (uint i = 0; i < *occupied_bytes; i++) {
+        key_base[31 - i] ^= ((global_id >> (i * 8)) & 0xFF);
+    }
 
     ed25519_create_keypair(public_key, private_key, key_base);
 
@@ -3767,8 +3777,6 @@ __kernel void generate_pubkey(
     uint suffix_offset = 0;
 
     for (uint pair_idx = 0; pair_idx < pair_count; pair_idx++) {
-        if (atomic_load(out_index) != 0) break;
-
         uchar pre_len = prefix_lengths[pair_idx];
         uchar suf_len = suffix_lengths[pair_idx];
         uint mismatch = 0;
@@ -3778,6 +3786,7 @@ __kernel void generate_pubkey(
             uchar b = ADJUST_INPUT_CASE(alphabet_indices[prefixes[prefix_offset + i]], case_sensitive);
             mismatch |= (a ^ b);
         }
+
         if (suf_len > 0) {
             for (uint i = 0; i < suf_len; i++) {
                 uchar a = ADJUST_INPUT_CASE(addr_raw[addr_len - suf_len + i], case_sensitive);
@@ -3790,19 +3799,24 @@ __kernel void generate_pubkey(
         suffix_offset += suf_len;
 
         if (mismatch == 0) {
-            uint prev = atomic_cmpxchg(out_index, 0, 1);
-            if (prev == 0) {
-                mem_fence(CLK_GLOBAL_MEM_FENCE);
-                out[0] = addr_len;
-                for (uint j = 0; j < 32; j++)
-                    out[1 + j] = key_base[j];
-                for (uint j = 0; j < 32; j++)
-                    out[33 + j] = public_key[j];
+            uint already_written = atomic_cmpxchg(out_index, 0, 1);
+            if (already_written == 0) {
+                uint slot = 0;
+
+                out[slot] = addr_len;
+
+                for (uint j = 0; j < 32; j++) {
+                    out[slot + 1 + j] = key_base[j];
+                }
+
+                for (uint j = 0; j < 32; j++) {
+                    out[slot + 33 + j] = public_key[j];
+                }
             }
+
             break;
         }
     }
 }
-
 
 
