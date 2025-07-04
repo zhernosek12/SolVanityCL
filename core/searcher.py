@@ -1,13 +1,11 @@
-import logging
 import time
-import multiprocessing
-
-from typing import List, Optional, Tuple
-
 import numpy as np
 import pyopencl as cl
 
-from core.config import HostSetting
+from loguru import logger
+from typing import List, Optional, Tuple
+
+
 from core.opencl.manager import (
     get_all_gpu_devices,
     get_selected_gpu_devices,
@@ -45,24 +43,52 @@ class Searcher:
 
         self.memobj_key32 = None
         self.memobj_output = None
+        self.memobj_out_index = None
         self.memobj_occupied_bytes = None
         self.memobj_group_offset = None
         self.prefixes_buf = None
         self.prefix_lengths_buf = None
         self.suffix_buf = None
+
+        self.suffixes_buf = None
+        self.suffix_lengths_buf = None
+
         self.output = None
+        self.output_index = None
 
-    def set_search_params(self, PREFIXES: List[str], SUFFIX: str, CASE_SENSITIVE: bool):
-        PREFIXES = [p.encode("utf-8") for p in PREFIXES]
-        prefix_data = b''.join(PREFIXES)
-        prefix_data_array = np.frombuffer(prefix_data, dtype=np.uint8)
-        prefix_lengths = np.array([len(p) for p in PREFIXES], dtype=np.uint8)
-        suffix_bytes = SUFFIX.encode("utf-8")
-        suffix_data_array = np.frombuffer(suffix_bytes if suffix_bytes else b"\x00", dtype=np.uint8)
-        suffix_len = np.uint32(len(suffix_bytes))
-        case_sensitive = np.uint8(CASE_SENSITIVE)
+    def set_search_params_batch(self, prefix_suffix_pairs: List[Tuple[str, str, str]], case_sensitive: bool):
+        prefix_bytes_list = []
+        suffix_bytes_list = []
+        prefix_lengths = []
+        suffix_lengths = []
 
-        self.output = np.zeros(33, dtype=np.ubyte)
+        for _, prefix, suffix in prefix_suffix_pairs:
+            prefix_b = prefix.encode('utf-8') if prefix else b''
+            suffix_b = suffix.encode('utf-8') if suffix else b''
+
+            prefix_bytes_list.append(prefix_b)
+            suffix_bytes_list.append(suffix_b)
+
+            prefix_lengths.append(len(prefix_b))
+            suffix_lengths.append(len(suffix_b))
+
+        flat_prefixes = b''.join(prefix_bytes_list)
+        flat_suffixes = b''.join(suffix_bytes_list)
+
+        prefix_buf = np.frombuffer(flat_prefixes, dtype=np.uint8) if flat_prefixes else np.zeros(1, dtype=np.uint8)
+
+        if flat_suffixes:
+            suffix_buf = np.frombuffer(flat_suffixes, dtype=np.uint8)
+        else:
+            suffix_buf = np.zeros(1, dtype=np.uint8)
+
+        prefix_lengths = np.array(prefix_lengths, dtype=np.uint8)
+        suffix_lengths = np.array(suffix_lengths, dtype=np.uint8)
+        case_sensitive = np.uint8(case_sensitive)
+        pair_count = np.uint32(len(prefix_suffix_pairs))
+
+        self.output = np.empty(65, dtype=np.uint8)
+        self.output_index = np.zeros(1, dtype=np.uint32)
 
         occupied_bytes = np.array([self.setting.iteration_bytes], dtype=np.uint32)
         group_offset = np.array([self.index], dtype=np.uint32)
@@ -76,9 +102,7 @@ class Searcher:
         )
 
         self.memobj_output = cl.Buffer(
-            self.context,
-            cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
-            hostbuf=self.output
+            self.context, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=self.output
         )
 
         self.memobj_occupied_bytes = cl.Buffer(
@@ -92,21 +116,20 @@ class Searcher:
             size=group_offset.nbytes
         )
 
+        self.memobj_out_index = cl.Buffer(
+            self.context, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=self.output_index
+        )
         self.prefixes_buf = cl.Buffer(
-            self.context, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR,
-            hostbuf=prefix_data_array
+            self.context, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=prefix_buf
         )
-
         self.prefix_lengths_buf = cl.Buffer(
-            self.context,
-            cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR,
-            hostbuf=prefix_lengths
+            self.context, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=prefix_lengths
         )
-
-        self.suffix_buf = cl.Buffer(
-            self.context,
-            cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR,
-            hostbuf=suffix_data_array
+        self.suffixes_buf = cl.Buffer(
+            self.context, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=suffix_buf
+        )
+        self.suffix_lengths_buf = cl.Buffer(
+            self.context, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=suffix_lengths
         )
 
         self.kernel.set_arg(0, self.memobj_key32)
@@ -115,14 +138,19 @@ class Searcher:
         self.kernel.set_arg(3, self.memobj_group_offset)
         self.kernel.set_arg(4, self.prefixes_buf)
         self.kernel.set_arg(5, self.prefix_lengths_buf)
-        self.kernel.set_arg(6, np.uint32(len(PREFIXES)))
-        self.kernel.set_arg(7, self.suffix_buf)
-        self.kernel.set_arg(8, suffix_len)
+        self.kernel.set_arg(6, self.suffixes_buf)
+        self.kernel.set_arg(7, self.suffix_lengths_buf)
+        self.kernel.set_arg(8, pair_count)
         self.kernel.set_arg(9, case_sensitive)
+        self.kernel.set_arg(10, self.memobj_out_index)
 
-    def find(self, log_stats: bool = True) -> np.ndarray:
+    def find(self, log_stats: bool = True):
         start_time = time.time()
-        cl.enqueue_copy(self.command_queue, self.memobj_key32, self.setting.key32)
+
+        self.output_index[0] = 0
+
+        cl.enqueue_copy(self.command_queue, self.memobj_out_index, self.output_index)  # new
+
         global_worker_size = self.setting.global_work_size // self.gpu_chunks
         cl.enqueue_nd_range_kernel(
             self.command_queue,
@@ -132,106 +160,24 @@ class Searcher:
         )
         self.command_queue.flush()
         self.setting.increase_key32()
+
         if self.prev_time is not None and self.is_nvidia:
             time.sleep(self.prev_time * 0.98)
+
         cl.enqueue_copy(self.command_queue, self.output, self.memobj_output).wait()
+        cl.enqueue_copy(self.command_queue, self.output_index, self.memobj_out_index).wait()  # NEW
+
         self.prev_time = time.time() - start_time
         if log_stats:
-            logging.info(
+            logger.info(
                 f"GPU {self.display_index} Speed: {global_worker_size / ((time.time() - start_time) * 1e6):.2f} MH/s"
             )
-        return self.output
 
+        results = []
+        if self.output_index[0] == 1:
+            base_idx = 0
+            length = self.output[base_idx]
+            seed = self.output[base_idx + 1: base_idx + 65].copy()
+            results.append((length, seed))
 
-"""
-def multi_gpu_init(
-    index: int,
-    setting: HostSetting,
-    gpu_counts: int,
-    stop_flag,
-    lock,
-    chosen_devices: Optional[Tuple[int, List[int]]] = None,
-) -> List:
-    try:
-        searcher = Searcher(
-            kernel_source=setting.kernel_source,
-            index=index,
-            setting=setting,
-            chosen_devices=chosen_devices,
-        )
-        i = 0
-        st = time.time()
-
-        searcher.set_search_params(["pepe"], "", False)
-
-        while True:
-            result = searcher.find(i == 0)
-            if result[0]:
-                with lock:
-                    if not stop_flag.value:
-                        stop_flag.value = 1
-                return result.tolist()
-            if time.time() - st > max(gpu_counts, 1):
-                i = 0
-                st = time.time()
-                with lock:
-                    if stop_flag.value:
-                        return result.tolist()
-            else:
-                i += 1
-    except Exception as e:
-        logging.exception(e)
-    return [0]
-"""
-
-
-def multi_gpu_worker(
-    index: int,
-    setting: HostSetting,
-    task_queue: multiprocessing.Queue,
-    result_queue: multiprocessing.Queue,
-    chosen_devices: Optional[Tuple[int, List[int]]] = None,
-):
-    try:
-        path_save = "./"
-        searcher = Searcher(
-            kernel_source=setting.kernel_source,
-            index=index,
-            setting=setting,
-            chosen_devices=chosen_devices,
-        )
-        while True:
-            task = task_queue.get()
-            if task is None:
-                break
-
-            prefix, suffix, case_sensitive = task
-            searcher.set_search_params([prefix], suffix, case_sensitive)  # Imortant == []
-
-            i = 0
-            st = time.time()
-            while True:
-                result = searcher.find(i == 0)
-                if result[0]:
-                    save_result([result.tolist()], path_save)
-                    break
-                if time.time() - st > 1:
-                    i = 0
-                    st = time.time()
-                else:
-                    i += 1
-    except Exception as e:
-        logging.exception(e)
-
-
-def save_result(outputs: List, output_dir: str) -> int:
-    from core.utils.crypto import save_keypair
-
-    result_count = 0
-    for output in outputs:
-        if not output[0]:
-            continue
-        result_count += 1
-        pv_bytes = bytes(output[1:])
-        save_keypair(pv_bytes, output_dir)
-    return result_count
+        return results

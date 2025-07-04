@@ -5,3 +5,7 @@ PyNaCl
 numpy==1.26.4
 flask
 requests
+loguru
+python-dotenv
+pandas
+psycopg2-binary

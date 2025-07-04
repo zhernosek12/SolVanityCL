@@ -3742,78 +3742,81 @@ __kernel void generate_pubkey(
 
     __constant uchar *prefixes,
     __constant uchar *prefix_lengths,
-    const uint prefix_count,
+    __constant uchar *suffixes,
+    __constant uchar *suffix_lengths,
+    const uint pair_count,
 
-    __constant uchar *suffix,
-    const uint suffix_length,
+    const uchar case_sensitive,
 
-    const uchar case_sensitive
+    __global uint *out_index
 ) {
-  uchar public_key[32] __attribute__((aligned(4)));
-  uchar private_key[64];
-  uchar key_base[32];
+    uchar public_key[32] __attribute__((aligned(4)));
+    uchar private_key[64];
+    uchar key_base[32];
 
-  #pragma unroll
-  for (size_t i = 0; i < 32; i++) {
-    key_base[i] = seed[i];
-  }
+    const int global_id = (*group_offset) * get_global_size(0) + get_global_id(0);
 
-  const int global_id = (*group_offset) * get_global_size(0) + get_global_id(0);
+    if (*out_index != 0) {
+        return;
+    }
 
-  // reset last occupied bytes
-  for (size_t i = 0; i < *occupied_bytes; i++) {
-    key_base[31 - i] += ((global_id >> (i * 8)) & 0xFF);
-  }
+    for (uint i = 0; i < 32; i++) {
+        key_base[i] = seed[i];
+    }
+    for (uint i = 0; i < *occupied_bytes; i++) {
+        key_base[31 - i] ^= ((global_id >> (i * 8)) & 0xFF);
+    }
 
-  ed25519_create_keypair(public_key, private_key, key_base);
-  size_t length;
-  uchar addr_buffer[45] __attribute__((aligned(4)));
-  uchar *addr_raw = base58_encode(public_key, &length, addr_buffer);
+    ed25519_create_keypair(public_key, private_key, key_base);
 
-  unsigned int any_mismatch = 1;
+    size_t addr_len;
+    uchar addr_buffer[45] __attribute__((aligned(4)));
+    uchar *addr_raw = base58_encode(public_key, &addr_len, addr_buffer);
 
     uint prefix_offset = 0;
+    uint suffix_offset = 0;
 
-    for (uint p = 0; p < prefix_count; p++) {
-        uchar len = prefix_lengths[p];
-        uint prefix_mismatch = 0;
+    for (uint pair_idx = 0; pair_idx < pair_count; pair_idx++) {
+        uchar pre_len = prefix_lengths[pair_idx];
+        uchar suf_len = suffix_lengths[pair_idx];
+        uint mismatch = 0;
 
-        for (uint i = 0; i < len; i++) {
+        for (uint i = 0; i < pre_len; i++) {
             uchar a = ADJUST_INPUT_CASE(addr_raw[i], case_sensitive);
             uchar b = ADJUST_INPUT_CASE(alphabet_indices[prefixes[prefix_offset + i]], case_sensitive);
-            prefix_mismatch |= (a ^ b);
+            mismatch |= (a ^ b);
         }
 
-        prefix_offset += len;
+        if (suf_len > 0) {
+            for (uint i = 0; i < suf_len; i++) {
+                uchar a = ADJUST_INPUT_CASE(addr_raw[addr_len - suf_len + i], case_sensitive);
+                uchar b = ADJUST_INPUT_CASE(alphabet_indices[suffixes[suffix_offset + i]], case_sensitive);
+                mismatch |= (a ^ b);
+            }
+        }
 
-        if (!prefix_mismatch) {
-            any_mismatch = 0;
+        prefix_offset += pre_len;
+        suffix_offset += suf_len;
+
+        if (mismatch == 0) {
+            uint already_written = atomic_cmpxchg(out_index, 0, 1);
+            if (already_written == 0) {
+                uint slot = 0;
+
+                out[slot] = addr_len;
+
+                for (uint j = 0; j < 32; j++) {
+                    out[slot + 1 + j] = key_base[j];
+                }
+
+                for (uint j = 0; j < 32; j++) {
+                    out[slot + 33 + j] = public_key[j];
+                }
+            }
+
             break;
         }
     }
-
-    if (suffix_length > 0) {
-        for (uint i = 0; i < suffix_length; i++) {
-            uchar a = ADJUST_INPUT_CASE(addr_raw[length - suffix_length + i], case_sensitive);
-            uchar b = ADJUST_INPUT_CASE(alphabet_indices[suffix[i]], case_sensitive);
-
-            any_mismatch |= (a ^ b);
-        }
-    }
-
-  if (!any_mismatch) {
-    // assign to out
-    if (out[0] == 0) {
-      out[0] = length;
-      for (size_t j = 0; j < 32; j++) {
-        out[j + 1] = key_base[j];
-      }
-    }
-    if (length < out[0]) {
-      out[0] = length;
-      for (size_t j = 0; j < 32; j++) {
-        out[j + 1] = key_base[j];
-      }
-    }
-  }
 }
+
+
