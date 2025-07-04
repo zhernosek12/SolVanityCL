@@ -73,6 +73,8 @@ def multi_gpu_worker(
                     if result:
                         results = get_results([r for r in result])
 
+                        logger.info(f"finde: {results}")
+
                         for data in results:
                             address, private_key = data
                             found_pair = None
@@ -86,7 +88,6 @@ def multi_gpu_worker(
                                 continue
 
                             row_id, _ = task_map[found_pair]
-
                             logger.info(f"FOUND = Address: {address} => row_id: {row_id}")
 
                             postgres.update(**{

@@ -7,14 +7,13 @@ import pyopencl as cl
 from base58 import b58decode
 
 
-def check_character(name: str, character: str) -> None:
+def check_character(name: str, character: str) -> bool:
     try:
         b58decode(character)
+        return True
     except ValueError as e:
         logging.error(f"{str(e)} in {name}")
-        raise SystemExit(1)
-    except Exception as e:
-        raise e
+        return False
 
 
 def old_load_kernel_source(
