@@ -19,49 +19,6 @@ from config import DB_CONFIG
 load_dotenv()
 
 
-
-"""
-def multi_gpu_init(
-    index: int,
-    setting: HostSetting,
-    gpu_counts: int,
-    stop_flag,
-    lock,
-    chosen_devices: Optional[Tuple[int, List[int]]] = None,
-) -> List:
-    try:
-        searcher = Searcher(
-            kernel_source=setting.kernel_source,
-            index=index,
-            setting=setting,
-            chosen_devices=chosen_devices,
-        )
-        i = 0
-        st = time.time()
-
-        searcher.set_search_params(["pepe"], "", False)
-
-        while True:
-            result = searcher.find(i == 0)
-            if result[0]:
-                with lock:
-                    if not stop_flag.value:
-                        stop_flag.value = 1
-                return result.tolist()
-            if time.time() - st > max(gpu_counts, 1):
-                i = 0
-                st = time.time()
-                with lock:
-                    if stop_flag.value:
-                        return result.tolist()
-            else:
-                i += 1
-    except Exception as e:
-        logging.exception(e)
-    return [0]
-"""
-
-
 def multi_gpu_worker(
     index: int,
     setting: HostSetting,
@@ -107,6 +64,9 @@ def multi_gpu_worker(
                 i = 0
                 st = time.time()
                 while True:
+                    if i == 0:
+                        logger.info(f"active_pairs: {active_pairs}")
+
                     result = searcher.find(i == 0)
                     found_something = False
 
@@ -141,8 +101,9 @@ def multi_gpu_worker(
                             break
 
                         if found_something:
-                            #time.sleep(0.01)  # предотвращение tight loop
                             break
+                        else:
+                            time.sleep(0.01)  # предотвращение tight loop
 
                     if time.time() - st > 1:
                         i = 0

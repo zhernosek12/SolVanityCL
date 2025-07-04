@@ -67,6 +67,8 @@ def event_new_row(rows):
         check_character("starts_with", wallet_start)
         check_character("ends_with", wallet_end)
 
+        logger.info(f"add -> {wallet_start} --> {wallet_end}")
+
         batch.append((row_id, wallet_start, wallet_end, case_sensitive))
 
     batch_size = len(batch)
