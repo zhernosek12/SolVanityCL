@@ -35,6 +35,7 @@ class Searcher:
             index if chosen_devices is None else chosen_devices[1][index]
         )
         self.start_index = 0
+        self.prefix_suffix_pairs = []
         self.prev_time = None
         self.is_nvidia = "NVIDIA" in enabled_device.platform.name.upper()
 
@@ -71,6 +72,8 @@ class Searcher:
 
             prefix_lengths.append(len(prefix_b))
             suffix_lengths.append(len(suffix_b))
+
+        self.prefix_suffix_pairs = prefix_suffix_pairs
 
         flat_prefixes = b''.join(prefix_bytes_list)
         flat_suffixes = b''.join(suffix_bytes_list)
@@ -165,6 +168,7 @@ class Searcher:
 
         self.prev_time = time.time() - start_time
         if log_stats:
+            logger.info(f"prefix_suffix_pairs: {self.prefix_suffix_pairs}")
             logger.info(
                 f"GPU {self.display_index} Speed: {global_worker_size / ((time.time() - start_time) * 1e6):.2f} MH/s"
             )
