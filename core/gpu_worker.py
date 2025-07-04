@@ -67,8 +67,6 @@ def multi_gpu_worker(
                     result = searcher.find(i == 0)
                     found_something = False
 
-                    logger.info(f"finde: {result}")
-
                     if result:
                         results = get_results([r for r in result])
 

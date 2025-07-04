@@ -115,7 +115,7 @@ class Searcher:
 
         self.memobj_group_offset = cl.Buffer(
             self.context,
-            cl.mem_flags.READ_WRITE,
+            cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
             size=group_offset.nbytes
         )
 
@@ -149,22 +149,30 @@ class Searcher:
 
     def find(self, log_stats: bool = True):
         start_time = time.time()
+
         cl.enqueue_copy(self.command_queue, self.memobj_out_index, self.output_index)  # new
+        cl.enqueue_copy(self.command_queue, self.memobj_key32, self.setting.key32)
+
+        group_offset = np.array([self.index], dtype=np.uint32)
+        cl.enqueue_copy(self.command_queue, self.memobj_group_offset, group_offset)
+
         global_worker_size = self.setting.global_work_size // self.gpu_chunks
-        cl.enqueue_nd_range_kernel(
+        evt = cl.enqueue_nd_range_kernel(
             self.command_queue,
             self.kernel,
             (global_worker_size,),
             (self.setting.local_work_size,),
         )
+        evt.wait()
         self.command_queue.flush()
+
+        cl.enqueue_copy(self.command_queue, self.output, self.memobj_output).wait()
+        cl.enqueue_copy(self.command_queue, self.output_index, self.memobj_out_index).wait()
+
         self.setting.increase_key32()
 
         if self.prev_time is not None and self.is_nvidia:
             time.sleep(self.prev_time * 0.98)
-
-        cl.enqueue_copy(self.command_queue, self.output, self.memobj_output).wait()
-        cl.enqueue_copy(self.command_queue, self.output_index, self.memobj_out_index).wait()
 
         self.prev_time = time.time() - start_time
         if log_stats:
@@ -174,11 +182,9 @@ class Searcher:
             )
 
         results = []
-
         if self.output_index[0] == 1:
-            base_idx = 0
-            length = self.output[base_idx]
-            seed = self.output[base_idx + 1: base_idx + 65].copy()
+            length = self.output[0]
+            seed = self.output[1: 65].copy()
             results.append((length, seed))
 
         return results

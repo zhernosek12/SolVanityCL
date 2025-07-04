@@ -22,6 +22,7 @@ EXECUTE FUNCTION notify_batch_insert();
 
 """
 
+
 class Postgres:
     def __init__(self, db_config):
         self.conn = psycopg2.connect(**db_config)
