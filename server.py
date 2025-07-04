@@ -1,3 +1,4 @@
+import sys
 import multiprocessing
 
 from loguru import logger
@@ -13,6 +14,9 @@ from core.utils.helpers import check_character, load_kernel_source
 from core.utils.parser import parse_wallet_pattern
 
 from config import DB_CONFIG, SUBCHUNK_MAX
+
+logger.remove()
+logger.add(sys.stdout, level="INFO")
 
 task_queues = None
 gpu_counts = 0
@@ -87,22 +91,20 @@ def main():
     global processes, task_queues, gpu_counts
 
     kernel_source = load_kernel_source()
-
     setting = HostSetting(kernel_source, iteration_bits=DEFAULT_ITERATION_BITS)
-
     gpu_counts = len(get_all_gpu_devices())
 
-    logger.info("Запускаем отработку задач...")
+    logger.info("Start task worker...")
 
     processes, task_queues = start_gpu_workers(setting, None)
 
-    logger.info("Инициализация базы...")
+    logger.info("Init database...")
 
     postgres = Postgres(
         db_config=DB_CONFIG
     )
 
-    logger.info("Запуск слушателя...")
+    logger.info("Start listener...")
 
     postgres.start_listen(event_new_row)
 
