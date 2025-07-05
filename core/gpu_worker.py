@@ -13,7 +13,7 @@ from core.postgres import Postgres
 
 from dotenv import load_dotenv
 
-from config import DB_CONFIG
+from config import DB_CONFIG, MAX_FIND_STEPS
 
 load_dotenv()
 
@@ -59,6 +59,8 @@ def multi_gpu_worker(
                     task_map[pair][1] for pair in prefix_suffix_pairs)  # True если хоть одна пара чувствительна
 
                 searcher.set_search_params_batch(prefix_suffix_pairs, case_sensitive)
+                find_steps = 0
+                row_id = prefix_suffix_pairs[0]
 
                 i = 0
                 st = time.time()
@@ -94,6 +96,16 @@ def multi_gpu_worker(
                             active_pairs.remove(found_pair)
                             found_something = True
                             break
+
+                        if find_steps >= MAX_FIND_STEPS:
+                            postgres.update(**{
+                                'row_id': row_id,
+                                'status': 'error',
+                                'message': 'key not found'
+                            })
+                            break
+
+                        find_steps += 1
 
                     if found_something:
                         break
