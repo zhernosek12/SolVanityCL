@@ -95,14 +95,12 @@ class Searcher:
         self.output_index = np.zeros(1, dtype=np.uint32)
 
         occupied_bytes = np.array([self.setting.iteration_bytes], dtype=np.uint32)
-        self.group_offset = np.array([self.index], dtype=np.uint32)
-
         self.setting.key32 = self.setting.generate_key32()  # уникальный seed для уникального приватника
-        key32 = self.setting.key32
+        self.group_offset = np.array([self.index], dtype=np.uint32)
 
         self.memobj_key32 = cl.Buffer(
             self.context,
-            cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=key32
+            cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=self.setting.key32
         )
 
         self.memobj_output = cl.Buffer(
@@ -152,13 +150,15 @@ class Searcher:
     def find(self, log_stats: bool = True):
         start_time = time.time()
 
-        cl.enqueue_copy(self.command_queue, self.memobj_key32, self.setting.key32)
-
-        self.group_offset = np.array([self.index], dtype=np.uint32)
-        cl.enqueue_copy(self.command_queue, self.memobj_group_offset, self.group_offset)
-
-        #self.output_index = np.zeros(1, dtype=np.uint32)
+        self.output_index[0] = 0
         cl.enqueue_copy(self.command_queue, self.memobj_out_index, self.output_index)
+        self.command_queue.finish()
+
+        offset = np.array([self.index], dtype=np.uint32)
+
+        cl.enqueue_copy(self.command_queue, self.memobj_group_offset, offset)
+        cl.enqueue_copy(self.command_queue, self.memobj_key32, self.setting.key32)
+        self.command_queue.finish()
 
         global_worker_size = self.setting.global_work_size // self.gpu_chunks
         evt = cl.enqueue_nd_range_kernel(
@@ -168,12 +168,10 @@ class Searcher:
             (self.setting.local_work_size,),
         )
         evt.wait()
-        self.command_queue.flush()
 
         cl.enqueue_copy(self.command_queue, self.output, self.memobj_output).wait()
         cl.enqueue_copy(self.command_queue, self.output_index, self.memobj_out_index).wait()
 
-        self.setting.increase_key32()
         self.prev_time = time.time() - start_time
 
         if log_stats:
@@ -187,5 +185,7 @@ class Searcher:
             length = self.output[0]
             seed = self.output[1: 65].copy()
             results.append((length, seed))
+
+        self.setting.increase_key32()
 
         return results
