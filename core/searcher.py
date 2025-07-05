@@ -174,10 +174,6 @@ class Searcher:
         cl.enqueue_copy(self.command_queue, self.output_index, self.memobj_out_index).wait()
 
         self.setting.increase_key32()
-
-        #if self.prev_time is not None and self.is_nvidia:
-        #    time.sleep(self.prev_time * 0.98)
-
         self.prev_time = time.time() - start_time
 
         if log_stats:
