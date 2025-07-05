@@ -15,7 +15,7 @@ DB_CONFIG = {
 SUBCHUNK_MAX = 100
 
 # больше итераций бит, болше диапазон
-DEFAULT_ITERATION_BITS = 48  # от 8 - 256
+DEFAULT_ITERATION_BITS = 24  # от 8 - 256
 DEFAULT_LOCAL_WORK_SIZE = 32
 
 # если за 100 шагов не удалось подобрать, значит стоп

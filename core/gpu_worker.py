@@ -67,6 +67,7 @@ def multi_gpu_worker(
                 while True:
                     result = searcher.find(i == 0)
                     found_something = False
+                    find_steps += 1
 
                     if result:
                         results = get_results([r for r in result])
@@ -97,15 +98,13 @@ def multi_gpu_worker(
                             found_something = True
                             break
 
-                        if find_steps >= MAX_FIND_STEPS:
-                            postgres.update(**{
-                                'row_id': row_id,
-                                'status': 'error',
-                                'message': 'key not found'
-                            })
-                            break
-
-                        find_steps += 1
+                    if find_steps >= MAX_FIND_STEPS:
+                        postgres.update(**{
+                            'row_id': row_id,
+                            'status': 'error',
+                            'message': 'key not found'
+                        })
+                        break
 
                     if found_something:
                         break
