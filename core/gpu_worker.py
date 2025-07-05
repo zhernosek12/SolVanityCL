@@ -59,15 +59,15 @@ def multi_gpu_worker(
                     task_map[pair][1] for pair in prefix_suffix_pairs)  # True если хоть одна пара чувствительна
 
                 searcher.set_search_params_batch(prefix_suffix_pairs, case_sensitive)
-                find_steps = 0
-                row_id = prefix_suffix_pairs[0]
+                #find_steps = 0
+                #row_id = prefix_suffix_pairs[0][0]
 
                 i = 0
                 st = time.time()
                 while True:
                     result = searcher.find(i == 0)
                     found_something = False
-                    find_steps += 1
+                    #find_steps += 1
 
                     if result:
                         results = get_results([r for r in result])
@@ -100,6 +100,7 @@ def multi_gpu_worker(
                             found_something = True
                             break
 
+                    """
                     if find_steps >= MAX_FIND_STEPS:
                         postgres.update(**{
                             'row_id': row_id,
@@ -107,6 +108,7 @@ def multi_gpu_worker(
                             'message': 'key not found'
                         })
                         break
+                    """
 
                     if found_something:
                         break
