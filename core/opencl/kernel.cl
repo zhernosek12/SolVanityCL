@@ -3763,6 +3763,7 @@ __kernel void generate_pubkey(
     for (uint i = 0; i < 32; i++) {
         key_base[i] = seed[i];
     }
+
     for (uint i = 0; i < *occupied_bytes; i++) {
         key_base[31 - i] ^= ((global_id >> (i * 8)) & 0xFF);
     }

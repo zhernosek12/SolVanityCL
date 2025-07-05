@@ -42,6 +42,7 @@ class Searcher:
         program = cl.Program(self.context, kernel_source).build()
         self.kernel = cl.Kernel(program, "generate_pubkey")
 
+        self.group_offset = None
         self.memobj_key32 = None
         self.memobj_output = None
         self.memobj_out_index = None
@@ -94,7 +95,7 @@ class Searcher:
         self.output_index = np.zeros(1, dtype=np.uint32)
 
         occupied_bytes = np.array([self.setting.iteration_bytes], dtype=np.uint32)
-        group_offset = np.array([self.index], dtype=np.uint32)
+        self.group_offset = np.array([self.index], dtype=np.uint32)
 
         self.setting.key32 = self.setting.generate_key32()  # уникальный seed для уникального приватника
         key32 = self.setting.key32
@@ -116,8 +117,8 @@ class Searcher:
         self.memobj_group_offset = cl.Buffer(
             self.context,
             cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR,
-            hostbuf=group_offset,
-            size=group_offset.nbytes
+            hostbuf=self.group_offset,
+            size=self.group_offset.nbytes
         )
 
         self.memobj_out_index = cl.Buffer(
@@ -151,11 +152,13 @@ class Searcher:
     def find(self, log_stats: bool = True):
         start_time = time.time()
 
-        cl.enqueue_copy(self.command_queue, self.memobj_out_index, self.output_index)  # new
         cl.enqueue_copy(self.command_queue, self.memobj_key32, self.setting.key32)
 
-        group_offset = np.array([self.index], dtype=np.uint32)
-        cl.enqueue_copy(self.command_queue, self.memobj_group_offset, group_offset)
+        self.group_offset = np.array([self.index], dtype=np.uint32)
+        cl.enqueue_copy(self.command_queue, self.memobj_group_offset, self.group_offset)
+
+        self.output_index = np.zeros(1, dtype=np.uint32)
+        cl.enqueue_copy(self.command_queue, self.memobj_out_index, self.output_index)
 
         global_worker_size = self.setting.global_work_size // self.gpu_chunks
         evt = cl.enqueue_nd_range_kernel(
