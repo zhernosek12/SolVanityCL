@@ -3,8 +3,7 @@ from math import ceil
 
 import numpy as np
 
-DEFAULT_ITERATION_BITS = 24
-DEFAULT_LOCAL_WORK_SIZE = 32
+from config import DEFAULT_ITERATION_BITS, DEFAULT_LOCAL_WORK_SIZE
 
 
 class HostSetting:

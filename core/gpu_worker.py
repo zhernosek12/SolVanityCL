@@ -1,9 +1,8 @@
-import os
+import multiprocessing
 import base58
 import time
-from loguru import logger
 
-import multiprocessing
+from loguru import logger
 
 from typing import List, Optional, Tuple
 from core.config import HostSetting

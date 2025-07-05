@@ -13,3 +13,7 @@ DB_CONFIG = {
 
 # максимальное количество записей за 1 запрох в очереди GPU
 SUBCHUNK_MAX = 100
+
+# больше итераций бит, болше диапазон
+DEFAULT_ITERATION_BITS = 48  # от 8 - 256
+DEFAULT_LOCAL_WORK_SIZE = 32
