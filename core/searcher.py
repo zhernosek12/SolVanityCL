@@ -175,10 +175,11 @@ class Searcher:
 
         self.setting.increase_key32()
 
-        if self.prev_time is not None and self.is_nvidia:
-            time.sleep(self.prev_time * 0.98)
+        #if self.prev_time is not None and self.is_nvidia:
+        #    time.sleep(self.prev_time * 0.98)
 
         self.prev_time = time.time() - start_time
+
         if log_stats:
             logger.info(f"prefix_suffix_pairs: {self.prefix_suffix_pairs}")
             logger.info(
