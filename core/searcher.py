@@ -157,7 +157,7 @@ class Searcher:
         self.group_offset = np.array([self.index], dtype=np.uint32)
         cl.enqueue_copy(self.command_queue, self.memobj_group_offset, self.group_offset)
 
-        self.output_index = np.zeros(1, dtype=np.uint32)
+        #self.output_index = np.zeros(1, dtype=np.uint32)
         cl.enqueue_copy(self.command_queue, self.memobj_out_index, self.output_index)
 
         global_worker_size = self.setting.global_work_size // self.gpu_chunks
