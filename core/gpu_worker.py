@@ -72,6 +72,8 @@ def multi_gpu_worker(
                     if result:
                         results = get_results([r for r in result])
 
+                        logger.info(f"Results cnt: {len(results)}")
+
                         for data in results:
                             address, private_key = data
                             found_pair = None
