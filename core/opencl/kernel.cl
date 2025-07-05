@@ -3773,7 +3773,7 @@ __kernel void generate_pubkey(
     uint suffix_offset = 0;
 
     for (uint pair_idx = 0; pair_idx < pair_count; pair_idx++) {
-        if (atomic_load(out_index) != 0) break;
+        //if (atomic_load(out_index) != 0) break;
 
         uchar pre_len = prefix_lengths[pair_idx];
         uchar suf_len = suffix_lengths[pair_idx];
