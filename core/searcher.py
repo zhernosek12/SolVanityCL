@@ -175,7 +175,6 @@ class Searcher:
         self.prev_time = time.time() - start_time
 
         if log_stats:
-            logger.info(f"prefix_suffix_pairs: {self.prefix_suffix_pairs}")
             logger.info(
                 f"GPU {self.display_index} Speed: {global_worker_size / ((time.time() - start_time) * 1e6):.2f} MH/s"
             )
