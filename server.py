@@ -57,8 +57,8 @@ def event_new_row(rows):
     logger.info("Добавляем новую партию...")
 
     for row in rows:
-        row_id, start_address = row
-        wallet_start, wallet_end = parse_wallet_pattern(start_address)
+        row_id, token_address, start_address = row
+        wallet_start, wallet_end = parse_wallet_pattern(token_address, start_address)
         case_sensitive = True
 
         if wallet_start == '':

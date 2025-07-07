@@ -42,7 +42,7 @@ class Postgres:
 
                     with self.conn.cursor() as select_cur:
                         select_cur.execute("""
-                            SELECT id, start_address
+                            SELECT id, token_address, start_address
                             FROM public.wallets_to_work
                             WHERE status = 'pending'
                         """)
